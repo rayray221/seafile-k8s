@@ -1,4 +1,4 @@
-## Created secret for image pull
+## Created a secret in order to pull image from seafile
 ## kubectl create secret docker-registry seafilecred --docker-server=docker.seadrive.org --docker-username=<seafile repo username> --docker-password=<seafile repo password> -n=seafile-app
 
 apiVersion: v1
