@@ -1,0 +1,346 @@
+## Created secret for image pull
+## kubectl create secret docker-registry seafilecred --docker-server=docker.seadrive.org --docker-username=<seafile repo username> --docker-password=<seafile repo password> -n=seafile-app
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: seafile-db-cred
+  namespace: seafile-app
+type: Opaque
+data:
+  password: #<db root password base64>
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: seafile-srv-cred
+  namespace: seafile-app
+type: Opaque
+data:
+  username: #<seafile admin logon base64>
+  password: #<seafile admin password base64>
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: seafile-app
+  labels:
+    apps: seafile
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: seafile-db-pv 
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  mountOptions:
+    - hard
+    - nfsvers=4.2
+  nfs:
+    path: /nfsfs/seafile/db
+    server: #<nfs searver>
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: seafile-db-pvc 
+  namespace: seafile-app
+spec:
+  accessModes:
+    - ReadWriteOnce 
+  resources:
+    requests:
+      storage: 5Gi 
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: seafile-db
+  name: seafile-db
+  namespace: seafile-app
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: seafile-db
+    spec:
+      containers:
+      - env:
+        - name: MYSQL_LOG_CONSOLE
+          value: "true"
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: seafile-db-cred
+              key: password 
+        image: mariadb:10.1
+        name: seafile-mysql
+        volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: seafile-db-nfs
+      restartPolicy: Always
+      volumes:
+      - name: seafile-db-nfs
+        persistentVolumeClaim:
+          claimName: seafile-db-pvc
+      securityContext:
+        fsGroup: #<nfs permissions group>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: seafile-db
+  name: db
+  namespace: seafile-app
+spec:
+  ports:
+  - name: "3306"
+    port: 3306
+    targetPort: 3306
+  selector:
+    app: seafile-db
+  type: ClusterIP
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: seafile-mc
+  name: seafile-mc
+  namespace: seafile-app
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: seafile-mc
+    spec:
+      containers:
+      - command:
+        - memcached
+        - -m
+        - "256"
+        image: memcached:1.5.6
+        name: seafile-memcached
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: seafile-mc
+  name: memcached
+  namespace: seafile-app
+spec:
+  ports:
+  - name: "11211"
+    port: 11211
+    targetPort: 11211
+  selector:
+    app: seafile-mc
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: seafile-elk-pv 
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  mountOptions:
+    - hard
+    - nfsvers=4.2
+  nfs:
+    path: /nfsfs/seafile/elk
+    server: #<nfs searver>
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: seafile-elk-pvc 
+  namespace: seafile-app
+spec:
+  accessModes:
+    - ReadWriteOnce 
+  resources:
+    requests:
+      storage: 5Gi 
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: seafile-elk
+  name: seafile-elk
+  namespace: seafile-app
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: seafile-elk
+    spec:
+      containers:
+      - env:
+        - name: ES_JAVA_OPTS
+          value: -Xms1g -Xmx1g
+        - name: discovery.type
+          value: single-node
+        image: seafileltd/elasticsearch-with-ik:5.6.16
+        name: seafile-elasticsearch
+        resources:
+          limits:
+            memory: "2147483648"
+        volumeMounts:
+        - mountPath: /usr/share/elasticsearch/data
+          name: seafile-elk-nfs
+      restartPolicy: Always
+      volumes:
+      - name: seafile-elk-nfs
+        persistentVolumeClaim:
+          claimName: seafile-elk-pvc
+      securityContext:
+        fsGroup: #<nfs permission group>
+      imagePullSecrets:
+        - name: seafilecred
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: seafile-elk
+  name: elasticsearch
+  namespace: seafile-app
+spec:
+  ports:
+  - name: "9200"
+    port: 9200
+    targetPort: 9200
+  - name: "9300"
+    port: 9300
+    targetPort: 9300
+  selector:
+    app: seafile-elk
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: seafile-srv-pv 
+spec:
+  capacity:
+    storage: 190Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  mountOptions:
+    - hard
+    - nfsvers=4.2
+  nfs:
+    path: /nfsfs/seafile_srv
+    server: #<nfs searver>
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: seafile-srv-pvc 
+  namespace: seafile-app
+spec:
+  accessModes:
+    - ReadWriteOnce 
+  resources:
+    requests:
+      storage: 190Gi 
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: seafile-srv
+  name: seafile-srv
+  namespace: seafile-app
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: seafile-srv
+    spec:
+      containers:
+      - env:
+        - name: DB_HOST
+          value: db
+        - name: DB_ROOT_PASSWD
+          valueFrom:
+            secretKeyRef:
+              name: seafile-db-cred
+              key: password 
+        - name: SEAFILE_ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: seafile-srv-cred
+              key: username 
+        - name: SEAFILE_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: seafile-srv-cred
+              key: password 
+        - name: SEAFILE_SERVER_HOSTNAME
+          value: #<Seafile Server Hostname>
+        - name: SEAFILE_SERVER_LETSENCRYPT
+          value: "true"
+        image: docker.seadrive.org/seafileltd/seafile-pro-mc:latest
+        name: seafile
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        volumeMounts:
+        - mountPath: /shared
+          name: seafile-srv-nfs
+      restartPolicy: Always
+      volumes:
+      - name: seafile-srv-nfs
+        persistentVolumeClaim:
+          claimName: seafile-srv-pvc
+      securityContext:
+        fsGroup: #<nfs permissions group>
+      imagePullSecrets:
+        - name: seafilecred
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: seafile-srv
+  name: seafile
+  namespace: seafile-app
+spec:
+  ports:
+  - name: "80"
+    port: 80
+    targetPort: 80
+  - name: "443"
+    port: 443
+    targetPort: 443
+  selector:
+    app: seafile-srv
+  type: LoadBalancer
