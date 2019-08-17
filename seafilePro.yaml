@@ -42,7 +42,7 @@ spec:
     - hard
     - nfsvers=4.2
   nfs:
-    path: /nfsfs/seafile/db
+    path: #<path to nfs share>
     server: #<nfs searver>
 ---
 apiVersion: v1
@@ -165,7 +165,7 @@ spec:
     - hard
     - nfsvers=4.2
   nfs:
-    path: /nfsfs/seafile/elk
+    path: #<path to nfs share>
     server: #<nfs searver>
 ---
 apiVersion: v1
@@ -254,7 +254,7 @@ spec:
     - hard
     - nfsvers=4.2
   nfs:
-    path: /nfsfs/seafile_srv
+    path: #<path to nfs share>
     server: #<nfs searver>
 ---
 apiVersion: v1
